@@ -1,0 +1,91 @@
+# IF THROUGH VIRTUAL MACHINE, MAKE SURE EFI IS ENABLED!!!!
+
+fdisk -l
+
+fdisk /dev/sda
+g # GPT partition table
+
+n
+1
+(enter)
++1G
+t
+1 # EFI
+
+n
+128
+(enter)
++8G
+t
+128
+swap
+
+n
+2
+(enter)
+(enter)
+# use default to use remaining space
+t
+2
+23 # Linux root (x86-64)
+
+w
+mkfs.fat -F 32 /dev/sda1  # format EFI partition w/ FAT32
+mkfs.ext4 /dev/sda2       # ext4 for root filesystem
+mkswap /dev/sda128        # swap
+
+mount /dev/sda2 /mnt
+mkdir -p /mnt/boot
+mount /dev/sda1 /mnt/boot
+swapon /dev/sda128
+
+pacstrap -K /mnt base linux linux-firmware
+
+# fstab config (needs a linux system to be set up)
+# MAKE SURE ALL PARTITIONS ARE INCLUDED THERE! Maybe remount them if some are missing somehow
+genfstab -U /mnt >> /mnt/etc/fstab
+
+pacstrap -K /mnt sudo
+
+# chroot
+arch-chroot /mnt
+
+
+
+
+
+# time
+pacman-key --init
+pacman-key --populate
+
+ip link set dev ??? up # pick the ethernet one
+# alternatively, `iwctl` for wi-fi
+
+ln -sf /usr/share/zoneinfo/Europe/Paris /etc/localtime
+hwclock --systohc # generate /etc/adjtime
+
+# localisation
+sed -i 's/#en_NZ.UTF-8/en_NZ.UTF-8/g' /etc/locale.gen
+locale-gen
+echo "LANG=en_NZ.UTF-8" > /etc/locale.conf # use your favoured locale
+
+echo 'ccjmne-arch' > /etc/hostname
+
+# mkinitcpio --allpresets # probably not necessary, see https://wiki.archlinux.org/title/installation_guide
+
+# let users of the 'sudo' group use `sudo`
+sed -i /etc/sudoers -e 's/^# %sudo/%sudo/g'
+groupadd sudo
+useradd --create-home ccjmne
+usermod -aG sudo ccjmne
+passwd ccjmne
+passwd -l root # disable root login (can still use `sudo -i` for interactive root prompt)
+
+pacman -S grub efibootmgr intel-ucode os-prober # os-prober only for dual-booting
+# pick any name you want for the bootloader-id
+# skip this step if grub is already installed
+grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=arch-grub
+sed -i /etc/default/grub -e 's/#GRUB_DISABLE_OS_PROBER=.*/GRUB_DISABLE_OS_PROBER=false/g'
+grub-mkconfig -o /boot/grub/grub.cfg
+
+exit
